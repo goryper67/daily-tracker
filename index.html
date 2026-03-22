@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#0F0F0F"/>
+<title>Daily Score</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#0F0F0F;color:#F0EDE8;font-family:'Georgia','Times New Roman',serif;min-height:100vh;}
+button{font-family:'Georgia','Times New Roman',serif;cursor:pointer;}
+input{font-family:'Georgia','Times New Roman',serif;}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{opacity:1;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const DEFAULT_CATEGORIES = [
+  { id:"physical", name:"Self", icon:"⚡", color:"#E84B2E", tasks:[
+    { id:"physical_1774163452388", name:"Excersise", points:5, options:[
+      { id:"opt_1774163596512", name:"Workout", points:8 },
+      { id:"opt_1774163606152", name:"Bike to work", points:5 },
+      { id:"opt_1774163614850", name:"Pushups", points:3 }
+    ], done:false, selectedOption:null },
+    { id:"physical_1774163845554", name:"ABM", points:0, options:[
+      { id:"opt_1774163819433", name:">15 minutes", points:3 },
+      { id:"opt_1774163827410", name:">45 minutes", points:5 },
+      { id:"opt_1774163872085", name:">90 minutes", points:8 }
+    ], done:false, selectedOption:null },
+    { id:"physical_1774163976888", name:"Lymph Drainage", points:0, options:[
+      { id:"opt_1774163967782", name:"Morning or night", points:5 },
+      { id:"opt_1774163972408", name:"Morning and night", points:8 }
+    ], done:false, selectedOption:null },
+    { id:"physical_1774166680418", name:"Sleep Target", points:0, options:[
+      { id:"opt_1774166662245", name:">7 hours", points:6 },
+      { id:"opt_1774166697304", name:">8 hours", points:8 }
+    ], done:false, selectedOption:null }
+  ]},
+  { id:"moral", name:"Moral", icon:"⚖️", color:"#2E7DE8", tasks:[
+    { id:"moral_1774164079932", name:"Pure", points:30, options:[
+      { id:"opt_1774167238931", name:"Pure body", points:25 },
+      { id:"opt_1774167268076", name:"Pure body and eyes", points:30 }
+    ], done:false, selectedOption:null },
+    { id:"moral_1774167029969", name:"Spiritual food", points:5, options:[
+      { id:"opt_1774167042398", name:">5 minutes reading", points:3 },
+      { id:"opt_1774167108488", name:">15 minutes reading", points:5 },
+      { id:"opt_1774167164439", name:">15 minutes study", points:10 }
+    ], done:false, selectedOption:null }
+  ]},
+  { id:"family", name:"Family", icon:"🏠", color:"#2EB87D", tasks:[
+    { id:"family_1774166878146", name:"Make meeting on time", points:3, options:[], done:false, selectedOption:null },
+    { id:"family_1774166901457", name:"Clean room in morning", points:4, options:[], done:false, selectedOption:null },
+    { id:"family_1774166911819", name:"Clean bathroom in mornimg", points:4, options:[], done:false, selectedOption:null },
+    { id:"family_1774166961482", name:"Dinner dishes", points:4, options:[], done:false, selectedOption:null }
+  ]},
+  { id:"financial", name:"Financial", icon:"💰", color:"#D4A017", tasks:[
+    { id:"financial_1774166944071", name:"No unnecessary spending", points:3, options:[], done:false, selectedOption:null },
+    { id:"financial_1774167327693", name:"Haircuts", points:5, options:[
+      { id:"opt_1774167335453", name:"1", points:5 },
+      { id:"opt_1774167347398", name:">2", points:7 }
+    ], done:false, selectedOption:null }
+  ]},
+  { id:"spiritual", name:"Others", icon:"🤝", color:"#9B59B6", tasks:[
+    { id:"spiritual_1774174011987", name:"Something for others", points:3, options:[], done:false, selectedOption:null }
+  ]},
+];
+
+const DAY_MAX = 100;
+const STORAGE_KEY = "dailyTracker_v7";
+const HISTORY_KEY = "dailyTracker_history";
+
+function todayDate() { return new Date(); }
+function fmt(d) { return new Date(d).toDateString(); }
+function isTodayFn(d) { return fmt(d) === fmt(todayDate()); }
+function loadState() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; } catch { return null; } }
+function saveState(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} }
+function loadHistory() { try { const r = localStorage.getItem(HISTORY_KEY); return r ? JSON.parse(r) : {}; } catch { return {}; } }
+function saveHistory(h) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {} }
+function resetTasksDone(cats) { return cats.map(c => ({ ...c, tasks: c.tasks.map(t => ({ ...t, done: false, selectedOption: null })) })); }
+function taskMaxPts(t) { return t.options && t.options.length > 0 ? Math.max(...t.options.map(o => o.points)) : (t.points || 0); }
+function taskEarned(t) {
+  if (!t.done) return 0;
+  if (t.options && t.options.length > 0) { const s = t.options.find(o => o.id === t.selectedOption); return s ? s.points : 0; }
+  return t.points || 0;
+}
+function calcScore(cats) { return Math.min(DAY_MAX, cats.reduce((s, c) => s + c.tasks.reduce((ts, t) => ts + taskEarned(t), 0), 0)); }
+
+function snapshotDay(categories, date) {
+  return {
+    date, score: calcScore(categories),
+    breakdown: categories.map(c => ({
+      id: c.id, name: c.name, icon: c.icon, color: c.color,
+      tasks: c.tasks.map(t => {
+        const sel = t.options && t.options.find(o => o.id === t.selectedOption);
+        return { name: t.name, done: t.done, earned: taskEarned(t), selectedLabel: sel ? sel.name : null, max: taskMaxPts(t), id: t.id, options: t.options || [], points: t.points || 0 };
+      })
+    }))
+  };
+}
+
+function scoreToColor(score) {
+  const r = score < 50 ? 255 : Math.round(255 - (score - 50) * 5.1);
+  const g = score < 50 ? Math.round(score * 5.1) : 255;
+  return `rgb(${r},${g},60)`;
+}
+function scoreRingColor(s) { return s >= 80 ? "#2EB87D" : s >= 60 ? "#D4A017" : s >= 40 ? "#E8914B" : "#E84B2E"; }
+
+function NumInput({ value, onChange, style }) {
+  const [raw, setRaw] = useState(String(value));
+  useEffect(() => { setRaw(String(value)); }, [value]);
+  return (
+    <input type="number" value={raw}
+      onChange={e => { setRaw(e.target.value); const n = parseInt(e.target.value); if (!isNaN(n) && n >= 1) onChange(n); }}
+      onBlur={() => { const n = parseInt(raw); const safe = isNaN(n) || n < 1 ? 1 : n; setRaw(String(safe)); onChange(safe); }}
+      style={style} />
+  );
+}
+
+function AddOptionRow({ color, onAdd }) {
+  const [name, setName] = useState("");
+  const [pts, setPts] = useState(3);
+  const go = () => { if (!name.trim()) return; onAdd(name.trim(), Math.max(1, pts)); setName(""); setPts(3); };
+  return (
+    <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+      <input placeholder="+ option name" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && go()}
+        style={{ flex:1, background:"#1A1A1A", border:"1px solid #252525", color:"#888", borderRadius:6, padding:"5px 8px", fontSize:12, fontFamily:"inherit" }} />
+      <NumInput value={pts} onChange={setPts} style={{ width:44, background:"#1A1A1A", border:"1px solid #252525", color, borderRadius:6, padding:"5px", fontSize:12, textAlign:"center", fontFamily:"inherit" }} />
+      <button onClick={go} style={{ background:"#1C1C1C", border:"1px solid #252525", color:"#888", borderRadius:6, padding:"5px 10px", fontSize:11 }}>Add</button>
+    </div>
+  );
+}
+
+// Build a blank day from current categories
+function blankDay(categories, date) {
+  return {
+    date, score: 0,
+    breakdown: categories.map(c => ({
+      id: c.id, name: c.name, icon: c.icon, color: c.color,
+      tasks: c.tasks.map(t => ({ id: t.id, name: t.name, done: false, earned: 0, selectedLabel: null, max: taskMaxPts(t), options: t.options || [], points: t.points || 0 }))
+    }))
+  };
+}
+
+// ── History view ─────────────────────────────────────────────────────
+function HistoryView({ onSelectDay, onClose }) {
+  const history = loadHistory();
+  const now = todayDate();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DNAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevM = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextM = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+  const atLatest = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth());
+  const monthEntries = Object.values(history).filter(e => { const d = new Date(e.date); return d.getFullYear() === year && d.getMonth() === month; });
+  const avg = monthEntries.length > 0 ? Math.round(monthEntries.reduce((s, e) => s + e.score, 0) / monthEntries.length) : null;
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const doExport = () => {
+    const data = JSON.stringify({ tasks: localStorage.getItem(STORAGE_KEY), history: localStorage.getItem(HISTORY_KEY) });
+    navigator.clipboard.writeText(data).then(() => alert("Data copied to clipboard")).catch(() => alert("Copy failed"));
+  };
+
+  const doImport = () => {
+    const txt = prompt("Paste exported data:");
+    if (!txt) return;
+    try {
+      const d = JSON.parse(txt.trim());
+      if (d.tasks) localStorage.setItem(STORAGE_KEY, typeof d.tasks === "string" ? d.tasks : JSON.stringify(d.tasks));
+      if (d.history) localStorage.setItem(HISTORY_KEY, typeof d.history === "string" ? d.history : JSON.stringify(d.history));
+      window.location.reload();
+    } catch { alert("Invalid data — make sure you copied everything."); }
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#0F0F0F", paddingBottom:40 }}>
+      <div style={{ padding:"28px 20px 0", display:"flex", alignItems:"center", gap:10 }}>
+        <button onClick={onClose} style={{ background:"transparent", border:"1px solid #222", color:"#666", borderRadius:8, padding:"6px 12px", fontSize:11, letterSpacing:1 }}>← TODAY</button>
+        <div style={{ fontSize:20, fontWeight:"bold", flex:1, paddingLeft:4 }}>History</div>
+      </div>
+
+      <div style={{ display:"flex", alignItems:"center", padding:"20px 16px 0" }}>
+        <button onClick={prevM} style={{ background:"#1A1A1A", border:"1px solid #222", color:"#888", borderRadius:8, padding:"6px 14px", fontSize:16 }}>‹</button>
+        <div style={{ flex:1, textAlign:"center" }}>
+          <div style={{ fontSize:15, fontWeight:"bold" }}>{MONTHS[month]} {year}</div>
+          {avg !== null && <div style={{ fontSize:11, color:"#555", marginTop:3 }}>Monthly avg: {avg} / 100</div>}
+          {avg === null && <div style={{ fontSize:11, color:"#333", marginTop:3 }}>No data this month</div>}
+        </div>
+        <button onClick={nextM} disabled={atLatest} style={{ background:"#1A1A1A", border:"1px solid #222", color: atLatest ? "#2A2A2A" : "#888", borderRadius:8, padding:"6px 14px", fontSize:16, cursor: atLatest ? "default" : "pointer" }}>›</button>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3, padding:"16px 12px 4px" }}>
+        {DNAMES.map(d => <div key={d} style={{ textAlign:"center", fontSize:10, color:"#444", letterSpacing:1 }}>{d}</div>)}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, padding:"0 12px" }}>
+        {cells.map((day, i) => {
+          if (!day) return <div key={"e"+i} />;
+          const d = new Date(year, month, day);
+          const entry = history[fmt(d)];
+          const isT = isTodayFn(d);
+          const isFuture = d > now && !isT;
+          const bg = entry ? scoreToColor(entry.score) : "#141414";
+          return (
+            <button key={day} onClick={() => !isFuture && onSelectDay(d)}
+              style={{ aspectRatio:"1", borderRadius:10, border: isT ? "2px solid #666" : "2px solid transparent", background:bg, cursor: isFuture ? "default" : "pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, opacity: isFuture ? 0.15 : 1 }}>
+              <div style={{ fontSize:9, color: entry ? "#00000066" : isT ? "#666" : "#2A2A2A", fontWeight:"bold", lineHeight:1 }}>{day}</div>
+              {entry && <div style={{ fontSize:13, fontWeight:"bold", color:"#0F0F0F", lineHeight:1 }}>{entry.score}</div>}
+              {isT && !entry && <div style={{ fontSize:9, color:"#444" }}>·</div>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ padding:"20px 16px 0", display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ fontSize:10, color:"#333" }}>0</span>
+        <div style={{ flex:1, height:5, borderRadius:3, background:"linear-gradient(to right,rgb(255,0,60),rgb(255,255,60),rgb(0,255,60))" }} />
+        <span style={{ fontSize:10, color:"#333" }}>100</span>
+      </div>
+
+      <div style={{ display:"flex", gap:16, justifyContent:"center", padding:"28px 16px 0" }}>
+        <button onClick={doExport} style={{ background:"none", border:"none", color:"#2A2A2A", fontSize:11, cursor:"pointer", letterSpacing:1, textDecoration:"underline", fontFamily:"inherit" }}>export</button>
+        <span style={{ color:"#1E1E1E", fontSize:11 }}>·</span>
+        <button onClick={doImport} style={{ background:"none", border:"none", color:"#2A2A2A", fontSize:11, cursor:"pointer", letterSpacing:1, textDecoration:"underline", fontFamily:"inherit" }}>import</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main view ─────────────────────────────────────────────────────────
+function MainView({ categories, setCategories, viewDate, setViewDate, editMode, setEditMode, onOpenHistory }) {
+  const [addingTask, setAddingTask] = useState(null);
+  const [expandedEdit, setExpandedEdit] = useState(null);
+  const [optionPicker, setOptionPicker] = useState(null);
+  const [newName, setNewName] = useState("");
+  const [newPts, setNewPts] = useState(5);
+  const [newOpts, setNewOpts] = useState([]);
+  const [, forceUpdate] = useState(0);
+
+  const viewing = isTodayFn(viewDate);
+  const history = loadHistory();
+
+  // For past days: use saved entry or build a blank from current tasks
+  const getPastEntry = () => history[fmt(viewDate)] || blankDay(categories, fmt(viewDate));
+  const displayCats = viewing ? categories : getPastEntry().breakdown;
+  const displayScore = viewing ? calcScore(categories) : getPastEntry().score;
+
+  const pct = (displayScore / DAY_MAX) * 100;
+  const sc = scoreRingColor(displayScore);
+
+  const upd = fn => setCategories(p => p.map(fn));
+
+  // Save a past day entry back to history
+  const savePastEntry = (entry) => {
+    entry.score = Math.min(DAY_MAX, entry.breakdown.reduce((s, c) => s + c.tasks.reduce((ts, t) => ts + (t.earned || 0), 0), 0));
+    const h = loadHistory();
+    h[fmt(viewDate)] = entry;
+    saveHistory(h);
+    forceUpdate(n => n + 1);
+  };
+
+  const toggleTask = (catId, taskId) => {
+    if (editMode) return;
+    if (viewing) {
+      const task = categories.find(c => c.id === catId) && categories.find(c => c.id === catId).tasks.find(t => t.id === taskId);
+      if (!task) return;
+      if (task.options && task.options.length > 0) {
+        if (task.done) upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, done: false, selectedOption: null }) });
+        else setOptionPicker({ catId, taskId });
+      } else {
+        upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, done: !t.done }) });
+      }
+    } else {
+      const entry = getPastEntry();
+      const catIdx = entry.breakdown.findIndex(c => c.id === catId);
+      if (catIdx < 0) return;
+      const taskIdx = entry.breakdown[catIdx].tasks.findIndex(t => t.id === taskId);
+      if (taskIdx < 0) return;
+      const bt = entry.breakdown[catIdx].tasks[taskIdx];
+      const liveTask = categories.find(c => c.id === catId) && categories.find(c => c.id === catId).tasks.find(t => t.id === taskId);
+      if (!liveTask) return;
+      if (liveTask.options && liveTask.options.length > 0) {
+        if (bt.done) {
+          entry.breakdown[catIdx].tasks[taskIdx] = { ...bt, done: false, earned: 0, selectedLabel: null };
+          savePastEntry(entry);
+        } else {
+          setOptionPicker({ catId, taskId, isPast: true, entry, catIdx, taskIdx });
+        }
+      } else {
+        const nowDone = !bt.done;
+        entry.breakdown[catIdx].tasks[taskIdx] = { ...bt, done: nowDone, earned: nowDone ? (liveTask.points || 0) : 0 };
+        savePastEntry(entry);
+      }
+    }
+  };
+
+  const selectOpt = (catId, taskId, optId) => {
+    if (optionPicker && optionPicker.isPast) {
+      const { entry, catIdx, taskIdx } = optionPicker;
+      const liveTask = categories.find(c => c.id === catId) && categories.find(c => c.id === catId).tasks.find(t => t.id === taskId);
+      const opt = liveTask && liveTask.options && liveTask.options.find(o => o.id === optId);
+      if (!opt) return;
+      entry.breakdown[catIdx].tasks[taskIdx] = { ...entry.breakdown[catIdx].tasks[taskIdx], done: true, earned: opt.points, selectedLabel: opt.name };
+      savePastEntry(entry);
+      setOptionPicker(null);
+    } else {
+      upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, done: true, selectedOption: optId }) });
+      setOptionPicker(null);
+    }
+  };
+
+  const deleteTask = (catId, taskId) => upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.filter(t => t.id !== taskId) });
+  const updateTaskField = (catId, taskId, field, val) => upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, [field]: val }) });
+  const updateOptField = (catId, taskId, optId, field, val) => upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, options: (t.options || []).map(o => o.id !== optId ? o : { ...o, [field]: val }) }) });
+  const deleteOpt = (catId, taskId, optId) => upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, options: (t.options || []).filter(o => o.id !== optId) }) });
+  const addOptToTask = (catId, taskId, name, pts) => { const opt = { id: "opt_" + Date.now(), name, points: pts }; upd(c => c.id !== catId ? c : { ...c, tasks: c.tasks.map(t => t.id !== taskId ? t : { ...t, options: [...(t.options || []), opt] }) }); };
+  const addTask = catId => {
+    if (!newName.trim()) return;
+    upd(c => c.id !== catId ? c : { ...c, tasks: [...c.tasks, { id: catId + "_" + Date.now(), name: newName.trim(), points: newOpts.length > 0 ? 0 : Math.max(1, newPts), options: newOpts, done: false, selectedOption: null }] });
+    setNewName(""); setNewPts(5); setNewOpts([]); setAddingTask(null);
+  };
+
+  const scoreLabel = () => {
+    if (!viewing) return null;
+    if (categories.every(c => c.tasks.length === 0)) return "Add your tasks to begin";
+    if (displayScore >= DAY_MAX) return "Perfect day 🔥";
+    if (pct >= 80) return "Great day";
+    if (pct >= 60) return "Good day";
+    if (pct >= 40) return "Getting there";
+    if (pct >= 20) return "Just starting";
+    return "Let's go";
+  };
+
+  const goDay = delta => {
+    const d = new Date(viewDate);
+    d.setDate(d.getDate() + delta);
+    if (d <= todayDate()) { setViewDate(d); setEditMode(false); }
+  };
+
+  const pickerTask = optionPicker ? (viewing
+    ? categories.find(c => c.id === optionPicker.catId) && categories.find(c => c.id === optionPicker.catId).tasks.find(t => t.id === optionPicker.taskId)
+    : categories.find(c => c.id === optionPicker.catId) && categories.find(c => c.id === optionPicker.catId).tasks.find(t => t.id === optionPicker.taskId)
+  ) : null;
+  const pickerCat = optionPicker ? categories.find(c => c.id === optionPicker.catId) : null;
+
+  const canGoForward = new Date(new Date(viewDate).setDate(new Date(viewDate).getDate() + 1)) <= todayDate();
+
+  return (
+    <div style={{ paddingBottom:40 }}>
+      {/* Header */}
+      <div style={{ padding:"28px 20px 0", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontSize:11, letterSpacing:3, color:"#555", textTransform:"uppercase", marginBottom:4 }}>
+            {new Date(viewDate).toLocaleDateString("en-NZ", { weekday:"long", day:"numeric", month:"long" })}
+          </div>
+          <div style={{ fontSize:22, fontWeight:"bold", letterSpacing:-0.5 }}>Daily Score</div>
+        </div>
+        <div style={{ display:"flex", gap:6, marginTop:4 }}>
+          <button onClick={onOpenHistory} style={{ background:"transparent", border:"1px solid #222", color:"#555", borderRadius:8, padding:"6px 10px", fontSize:11, letterSpacing:1 }}>HISTORY</button>
+          {!viewing && (
+            <button onClick={() => { setViewDate(todayDate()); setEditMode(false); }} style={{ background:"#2E7DE8", border:"none", color:"#fff", borderRadius:8, padding:"6px 10px", fontSize:11, letterSpacing:1, fontFamily:"inherit" }}>↩ TODAY</button>
+          )}
+          {viewing && (
+            <button onClick={() => { setEditMode(!editMode); setAddingTask(null); setExpandedEdit(null); }}
+              style={{ background: editMode ? "#F0EDE8" : "transparent", border: "1px solid " + (editMode ? "#F0EDE8" : "#222"), color: editMode ? "#0F0F0F" : "#888", borderRadius:8, padding:"6px 10px", fontSize:11, letterSpacing:1, transition:"all 0.2s" }}>
+              {editMode ? "DONE" : "EDIT"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Score ring with day arrows */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", padding:"24px 0 20px" }}>
+        <button onClick={() => goDay(-1)} style={{ background:"none", border:"none", color:"#444", fontSize:32, padding:"0 16px", lineHeight:1 }}>‹</button>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+          <div style={{ position:"relative", width:140, height:140 }}>
+            <svg width="140" height="140" style={{ transform:"rotate(-90deg)" }}>
+              <circle cx="70" cy="70" r="58" fill="none" stroke="#1A1A1A" strokeWidth="10"/>
+              <circle cx="70" cy="70" r="58" fill="none" stroke={sc} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={2*Math.PI*58} strokeDashoffset={2*Math.PI*58*(1-pct/100)}
+                style={{ transition:"stroke-dashoffset 0.5s ease,stroke 0.3s ease" }}/>
+            </svg>
+            <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", textAlign:"center" }}>
+              <div style={{ fontSize:32, fontWeight:"bold", lineHeight:1, color:sc }}>{displayScore}</div>
+              <div style={{ fontSize:12, color:"#3A3A3A", marginTop:2 }}>/ {DAY_MAX}</div>
+            </div>
+          </div>
+          {scoreLabel() && <div style={{ marginTop:10, fontSize:12, color:"#555", letterSpacing:1 }}>{scoreLabel()}</div>}
+        </div>
+        <button onClick={() => goDay(1)} style={{ background:"none", border:"none", color: canGoForward ? "#444" : "#1A1A1A", fontSize:32, padding:"0 16px", lineHeight:1, cursor: canGoForward ? "pointer" : "default" }}>›</button>
+      </div>
+
+      {/* Categories */}
+      <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:12 }}>
+        {displayCats.map((cat, ci) => {
+          const liveCat = categories.find(c => c.id === cat.id);
+          const tasks = cat.tasks || [];
+          const catScore = tasks.reduce((s, t) => s + (t.earned !== undefined ? t.earned : taskEarned(t)), 0);
+          const catMax = tasks.reduce((s, t) => s + (t.max !== undefined ? t.max : taskMaxPts(t)), 0);
+          const catPct = catMax > 0 ? Math.min(100, (catScore / catMax) * 100) : 0;
+
+          return (
+            <div key={cat.id || ci} style={{ background:"#141414", borderRadius:14, padding:16, border:"1px solid #1C1C1C" }}>
+              <div style={{ display:"flex", alignItems:"center", marginBottom: catMax > 0 ? 10 : 6 }}>
+                <span style={{ fontSize:17, marginRight:8 }}>{cat.icon}</span>
+                <span style={{ fontWeight:"bold", fontSize:15, flex:1 }}>{cat.name}</span>
+                {catMax > 0 && <div><span style={{ fontSize:14, fontWeight:"bold", color: catScore >= catMax ? cat.color : "#F0EDE8" }}>{catScore}</span><span style={{ fontSize:11, color:"#3A3A3A" }}>/{catMax}</span></div>}
+              </div>
+              {catMax > 0 && <div style={{ height:2, background:"#1C1C1C", borderRadius:2, marginBottom:12, overflow:"hidden" }}><div style={{ height:"100%", width: catPct + "%", background:cat.color, borderRadius:2, transition:"width 0.4s ease" }}/></div>}
+              {tasks.length === 0 && viewing && !editMode && <div style={{ fontSize:12, color:"#2A2A2A", fontStyle:"italic" }}>No tasks yet — tap EDIT to add some</div>}
+
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {tasks.map((task, ti) => {
+                  const done = task.done;
+                  const earned = task.earned !== undefined ? task.earned : taskEarned(task);
+                  const max = task.max !== undefined ? task.max : taskMaxPts(task);
+                  const hasOpts = task.options && task.options.length > 0;
+                  const selLabel = viewing ? (task.options && task.options.find(o => o.id === task.selectedOption) ? task.options.find(o => o.id === task.selectedOption).name : null) : task.selectedLabel;
+                  const isExpanded = expandedEdit === task.id;
+
+                  return (
+                    <div key={task.id || ti}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        {editMode && viewing ? (
+                          <>
+                            <button onClick={() => deleteTask(cat.id, task.id)} style={{ background:"#1A0A0A", border:"1px solid #3A1515", color:"#C04040", borderRadius:6, width:24, height:24, fontSize:15, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                            <input value={task.name} onChange={e => updateTaskField(cat.id, task.id, "name", e.target.value)}
+                              style={{ flex:1, background:"#1C1C1C", border:"1px solid #252525", color:"#F0EDE8", borderRadius:6, padding:"5px 8px", fontSize:13, fontFamily:"inherit" }}/>
+                            {!(task.options && task.options.length > 0) && <>
+                              <NumInput value={task.points || 0} onChange={v => updateTaskField(cat.id, task.id, "points", v)} style={{ width:44, background:"#1A1A1A", border:"1px solid #252525", color:cat.color, borderRadius:6, padding:"5px", fontSize:12, textAlign:"center", fontFamily:"inherit" }}/>
+                              <span style={{ fontSize:10, color:"#333", width:16 }}>pts</span>
+                            </>}
+                            {task.options && task.options.length > 0 && <span style={{ fontSize:11, color:"#444", minWidth:44, textAlign:"right" }}>{max}pt max</span>}
+                            <button onClick={() => setExpandedEdit(isExpanded ? null : task.id)}
+                              style={{ background: isExpanded ? cat.color : "#1C1C1C", border: "1px solid " + (isExpanded ? cat.color : "#252525"), color: isExpanded ? "#0F0F0F" : "#666", borderRadius:6, padding:"4px 8px", fontSize:11, flexShrink:0 }}>
+                              {isExpanded ? "▲" : "▼"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => toggleTask(cat.id, task.id || ti)}
+                              style={{ width:22, height:22, borderRadius:6, flexShrink:0, border: "2px solid " + (done ? cat.color : "#252525"), background: done ? cat.color : "transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.15s ease" }}>
+                              {done && <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3.5 3.5L11 1" stroke="#0F0F0F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </button>
+                            <div style={{ flex:1 }}>
+                              <span style={{ fontSize:13, color: done ? "#444" : "#C0BDB8", textDecoration: done ? "line-through" : "none", transition:"all 0.2s" }}>{task.name}</span>
+                              {hasOpts && done && selLabel && <span style={{ fontSize:11, color:cat.color, marginLeft:8 }}>· {selLabel}</span>}
+                              {hasOpts && !done && <span style={{ fontSize:10, color:"#333", marginLeft:8 }}>tap to choose</span>}
+                            </div>
+                            <span style={{ fontSize:12, fontWeight:"bold", color: done ? cat.color : "#2E2E2E", minWidth:32, textAlign:"right" }}>{done ? earned + "pt" : max + "pt"}</span>
+                          </>
+                        )}
+                      </div>
+
+                      {editMode && viewing && isExpanded && (
+                        <div style={{ background:"#0F0F0F", borderRadius:8, padding:"10px 12px", marginTop:6, display:"flex", flexDirection:"column", gap:6 }}>
+                          <div style={{ fontSize:10, color:"#444", letterSpacing:1, textTransform:"uppercase", marginBottom:2 }}>Options</div>
+                          {(task.options || []).length === 0 && <div style={{ fontSize:12, color:"#2A2A2A", fontStyle:"italic" }}>No options yet</div>}
+                          {(task.options || []).map(opt => (
+                            <div key={opt.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                              <button onClick={() => deleteOpt(cat.id, task.id, opt.id)} style={{ background:"transparent", border:"none", color:"#C04040", fontSize:14, padding:0, flexShrink:0 }}>×</button>
+                              <input value={opt.name} onChange={e => updateOptField(cat.id, task.id, opt.id, "name", e.target.value)}
+                                style={{ flex:1, background:"#1A1A1A", border:"1px solid #252525", color:"#C0BDB8", borderRadius:6, padding:"4px 8px", fontSize:12, fontFamily:"inherit" }}/>
+                              <NumInput value={opt.points} onChange={v => updateOptField(cat.id, task.id, opt.id, "points", v)} style={{ width:44, background:"#1A1A1A", border:"1px solid #252525", color:cat.color, borderRadius:6, padding:"4px 6px", fontSize:12, textAlign:"center", fontFamily:"inherit" }}/>
+                              <span style={{ fontSize:10, color:"#333", width:16 }}>pts</span>
+                            </div>
+                          ))}
+                          <AddOptionRow color={cat.color} onAdd={(n, p) => addOptToTask(cat.id, task.id, n, p)}/>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {editMode && viewing && (
+                  addingTask === cat.id ? (
+                    <div style={{ background:"#0F0F0F", borderRadius:10, padding:12, border:"1px solid #1C1C1C", display:"flex", flexDirection:"column", gap:10, marginTop:4 }}>
+                      <input autoFocus placeholder="Task name..." value={newName} onChange={e => setNewName(e.target.value)}
+                        style={{ background:"#1A1A1A", border: "1px solid " + cat.color, color:"#F0EDE8", borderRadius:6, padding:"7px 10px", fontSize:13, fontFamily:"inherit" }}/>
+                      {newOpts.length === 0 && (
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:11, color:"#444", flex:1 }}>Flat points</span>
+                          <NumInput value={newPts} onChange={setNewPts} style={{ width:50, background:"#1A1A1A", border:"1px solid #252525", color:cat.color, borderRadius:6, padding:"5px", fontSize:12, textAlign:"center", fontFamily:"inherit" }}/>
+                        </div>
+                      )}
+                      {newOpts.length > 0 && (
+                        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                          <span style={{ fontSize:10, color:"#444", letterSpacing:1, textTransform:"uppercase" }}>Options</span>
+                          {newOpts.map((o, i) => (
+                            <div key={o.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                              <span style={{ flex:1, fontSize:12, color:"#666" }}>{o.name}</span>
+                              <span style={{ fontSize:12, color:cat.color }}>{o.points}pt</span>
+                              <button onClick={() => setNewOpts(p => p.filter((_, j) => j !== i))} style={{ background:"transparent", border:"none", color:"#444", fontSize:14 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <AddOptionRow color={cat.color} onAdd={(n, p) => setNewOpts(prev => [...prev, { id: "opt_" + Date.now(), name: n, points: p }])}/>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={() => { setAddingTask(null); setNewName(""); setNewOpts([]); }} style={{ flex:1, background:"transparent", border:"1px solid #222", color:"#555", borderRadius:8, padding:"7px", fontSize:12, fontFamily:"inherit" }}>Cancel</button>
+                        <button onClick={() => addTask(cat.id)} style={{ flex:2, background:cat.color, border:"none", color:"#0F0F0F", borderRadius:8, padding:"7px", fontSize:12, fontWeight:"bold", fontFamily:"inherit" }}>Save Task</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setAddingTask(cat.id); setNewName(""); setNewPts(5); setNewOpts([]); }}
+                      style={{ background:"transparent", border:"1px dashed #202020", color:"#383838", borderRadius:8, padding:"7px", fontSize:11, width:"100%", letterSpacing:1, fontFamily:"inherit" }}>+ ADD TASK</button>
+                  )
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Option picker */}
+      {optionPicker && pickerTask && pickerCat && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.9)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:100, padding:"0 0 24px" }}>
+          <div style={{ background:"#141414", border:"1px solid #1C1C1C", borderRadius:20, padding:24, width:"calc(100% - 32px)", maxWidth:400 }}>
+            <div style={{ fontSize:16, fontWeight:"bold", marginBottom:4 }}>{pickerTask.name}</div>
+            <div style={{ fontSize:12, color:"#444", marginBottom:18, letterSpacing:1 }}>SELECT TYPE</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {pickerTask.options.map(opt => (
+                <button key={opt.id} onClick={() => selectOpt(pickerCat.id, pickerTask.id, opt.id)}
+                  style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#0F0F0F", border: "1px solid " + pickerCat.color + "22", borderRadius:10, padding:"12px 16px", fontFamily:"inherit" }}>
+                  <span style={{ fontSize:14, color:"#C0BDB8" }}>{opt.name}</span>
+                  <span style={{ fontSize:14, fontWeight:"bold", color:pickerCat.color }}>{opt.points}pt</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setOptionPicker(null)} style={{ marginTop:14, width:"100%", background:"transparent", border:"1px solid #222", color:"#555", borderRadius:10, padding:"10px", fontSize:13, fontFamily:"inherit" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────
+function App() {
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewDate, setViewDate] = useState(todayDate());
+  const [editMode, setEditMode] = useState(false);
+  const [categories, setCategories] = useState(() => {
+    const s = loadState();
+    if (!s) return DEFAULT_CATEGORIES;
+    if (s.date !== fmt(todayDate())) return resetTasksDone(s.categories);
+    return s.categories;
+  });
+
+  useEffect(() => { saveState({ date: fmt(todayDate()), categories }); }, [categories]);
+
+  useEffect(() => {
+    const now = new Date(), mid = new Date(); mid.setHours(24, 0, 0, 0);
+    const t = setTimeout(() => {
+      const h = loadHistory();
+      const snap = snapshotDay(categories, fmt(todayDate()));
+      if (snap.score > 0 || categories.some(c => c.tasks.some(t => t.done))) { h[fmt(todayDate())] = snap; saveHistory(h); }
+      setCategories(p => resetTasksDone(p));
+    }, mid - now);
+    return () => clearTimeout(t);
+  }, [categories]);
+
+  useEffect(() => { if (categories.every(c => c.tasks.length === 0)) setEditMode(true); }, []);
+
+  const handleSelectDay = d => {
+    const h = loadHistory();
+    const snap = snapshotDay(categories, fmt(todayDate()));
+    if (snap.score > 0 || categories.some(c => c.tasks.some(t => t.done))) { h[fmt(todayDate())] = snap; saveHistory(h); }
+    setViewDate(d); setShowHistory(false); setEditMode(false);
+  };
+
+  if (showHistory) {
+    return (
+      <div style={{ position:"fixed", inset:0, overflowY:"auto", background:"#0F0F0F" }}>
+        <HistoryView onSelectDay={handleSelectDay} onClose={() => setShowHistory(false)}/>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position:"fixed", inset:0, overflowY:"auto", background:"#0F0F0F" }}>
+      <MainView
+        categories={categories} setCategories={setCategories}
+        viewDate={viewDate} setViewDate={setViewDate}
+        editMode={editMode} setEditMode={setEditMode}
+        onOpenHistory={() => setShowHistory(true)}
+      />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
